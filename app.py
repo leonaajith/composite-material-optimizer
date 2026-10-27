@@ -32,7 +32,7 @@ with tab1:
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        alumina = st.slider("Alumina Nanoparticle (wt%)", 0.0, 10.0, 5.0, 0.1)
+        alumina = st.slider("Alumina Nanoparticle (wt%)", 0.0, 1.0, 0.5, 0.05)
         jute = st.slider("Jute Fiber (wt%)", 20.0, 40.0, 30.0, 0.5)
         temp = st.slider("Curing Temperature (°C)", 80.0, 120.0, 100.0, 1.0)
         
@@ -46,7 +46,7 @@ with tab1:
 
     with col2:
         # Plotly chart showing Alumina wt% vs Tensile Strength
-        alumina_range = np.linspace(0, 10, 50)
+        alumina_range = np.linspace(0, 1.0, 50)
         sim_data = [[a, jute, temp] for a in alumina_range]
         tensile_curve = model_tensile.predict(sim_data)
         
@@ -61,7 +61,7 @@ with tab2:
     st.subheader("Automated Recipe Generator")
     st.write("Enter your desired target tensile strength, and SciPy optimization will generate the optimal composite formula.")
     
-    target = st.number_input("Target Tensile Strength (MPa)", min_value=30.0, max_value=70.0, value=50.0, step=1.0)
+    target = st.number_input("Target Tensile Strength (MPa)", min_value=10.0, max_value=40.0, value=32.0, step=0.5)
     
     if st.button("Generate Optimal Recipe"):
         result = optimize_composition(target)
