@@ -61,8 +61,8 @@ def optimize_composition(target_tensile):
         return (pred - target_tensile) ** 2
 
     # Feature bounds: Alumina (0-10%), Jute (20-40%), Curing Temp (80-120 C)
-    bounds = [(0, 10), (20, 40), (80, 120)]
-    initial_guess = [5.0, 30.0, 100.0]
+    bounds = [(0, 1.0), (20, 40), (80, 120)]
+    initial_guess = [0.5, 30.0, 100.0]
 
     res = minimize(objective, initial_guess, bounds=bounds, method='L-BFGS-B')
     
