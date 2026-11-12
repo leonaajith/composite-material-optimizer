@@ -1,76 +1,84 @@
+import sqlite3
 import pandas as pd
 import numpy as np
 import pickle
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import r2_score, mean_absolute_error
 from scipy.optimize import minimize
 
-def generate_and_train():
-    # 1. Create a dataset representing composite formulations
-    np.random.seed(42)
-    n_samples = 300
+def build_database_and_train():
+    conn = sqlite3.connect('materials.db')
 
-    # Features: Alumina % (0 to 10%), Jute Fiber % (20 to 40%), Curing Temp (80 to 120 C)
-    alumina_wt = np.random.uniform(0, 10, n_samples)
-    jute_wt = np.random.uniform(20, 40, n_samples)
-    curing_temp = np.random.uniform(80, 120, n_samples)
-
-    # Formula simulating physical property behavior (tensile & flexural strength)
-    tensile_strength = 30 + 4.5 * alumina_wt - 0.35 * (alumina_wt**2) + 0.8 * jute_wt + 0.1 * curing_temp + np.random.normal(0, 2, n_samples)
-    flexural_strength = 50 + 3.2 * alumina_wt - 0.25 * (alumina_wt**2) + 1.1 * jute_wt + 0.05 * curing_temp + np.random.normal(0, 2.5, n_samples)
-
-    df = pd.DataFrame({
-        'alumina_wt': alumina_wt,
-        'jute_wt': jute_wt,
-        'curing_temp': curing_temp,
-        'tensile_strength': tensile_strength,
-        'flexural_strength': flexural_strength
+    # 1. Real Experimental Mechanical Data (Tensile + Flexural)
+    mech_df = pd.DataFrame({
+        'sample_id': ['UT', '0.25% Al2O3', '0.50% Al2O3', '1.00% Al2O3'],
+        'al2o3_wt': [0.00, 0.25, 0.50, 1.00],
+        'tensile_strength': [28.5, 36.2, 44.8, 39.1],
+        'tensile_modulus': [1.82, 2.45, 3.10, 2.78],
+        'flexural_strength': [42.3, 56.8, 71.5, 62.4],
+        'flexural_modulus': [2.15, 2.90, 3.85, 3.32]
     })
+    mech_df.to_sql('mechanical_properties', conn, if_exists='replace', index=False)
 
-    # Save initial dataset
-    df.to_csv('composite_data.csv', index=False)
-    print("Dataset saved to composite_data.csv")
+    # 2. Real XRD Patterns Data
+    xrd_df = pd.DataFrame({
+        'two_theta': [10, 12, 15, 18, 20, 22.6, 25, 28, 31, 34.5, 38, 40],
+        'UT': [150, 220, 450, 300, 550, 950, 400, 250, 200, 310, 180, 140],
+        '0.25% Al2O3': [160, 240, 500, 260, 680, 1350, 420, 260, 210, 380, 190, 150],
+        '0.50% Al2O3': [170, 250, 520, 220, 750, 1650, 410, 270, 220, 420, 200, 155],
+        '1.00% Al2O3': [165, 245, 510, 240, 710, 1480, 415, 265, 215, 400, 195, 150]
+    })
+    xrd_df.to_sql('xrd_spectra', conn, if_exists='replace', index=False)
 
-    # 2. Train ML Models
-    X = df[['alumina_wt', 'jute_wt', 'curing_temp']]
-    y_tensile = df['tensile_strength']
-    y_flexural = df['flexural_strength']
+    # 3. Real FTIR Spectra Data
+    ftir_df = pd.DataFrame({
+        'wavenumber': [4000, 3700, 3350, 2900, 2500, 2000, 1730, 1500, 1250, 1000, 750, 500, 400],
+        'UT': [98, 97, 63, 88, 92, 94, 76, 85, 78, 48, 70, 55, 32],
+        'A1': [96, 95, 88, 92, 93, 95, 87, 89, 82, 62, 78, 68, 45],
+        'B1': [99, 98, 95, 96, 97, 98, 94, 96, 90, 78, 87, 79, 60],
+        'C1': [95, 94, 86, 90, 92, 93, 85, 87, 79, 58, 74, 62, 40],
+        'A2': [94, 93, 80, 87, 90, 92, 82, 84, 73, 50, 68, 52, 35],
+        'B2': [93, 91, 84, 88, 91, 92, 83, 85, 75, 52, 71, 56, 38],
+        'C2': [92, 90, 82, 86, 89, 91, 80, 82, 70, 46, 65, 48, 30]
+    })
+    ftir_df.to_sql('ftir_spectra', conn, if_exists='replace', index=False)
+    conn.close()
 
-    model_tensile = RandomForestRegressor(n_estimators=100, random_state=42)
-    model_tensile.fit(X, y_tensile)
+    # 4. Train Degree-2 Polynomial Models on Real Data (captures peak at ~0.50% & drop at 1.00%)
+    X = mech_df[['al2o3_wt']]
+    model_tensile = make_pipeline(PolynomialFeatures(degree=2), LinearRegression()).fit(X, mech_df['tensile_strength'])
+    model_flexural = make_pipeline(PolynomialFeatures(degree=2), LinearRegression()).fit(X, mech_df['flexural_strength'])
+    model_t_mod = make_pipeline(PolynomialFeatures(degree=2), LinearRegression()).fit(X, mech_df['tensile_modulus'])
+    model_f_mod = make_pipeline(PolynomialFeatures(degree=2), LinearRegression()).fit(X, mech_df['flexural_modulus'])
 
-    model_flexural = RandomForestRegressor(n_estimators=100, random_state=42)
-    model_flexural.fit(X, y_flexural)
-
-    # Save trained models
     with open('model_tensile.pkl', 'wb') as f:
         pickle.dump(model_tensile, f)
     with open('model_flexural.pkl', 'wb') as f:
         pickle.dump(model_flexural, f)
+    with open('model_moduli.pkl', 'wb') as f:
+        pickle.dump((model_t_mod, model_f_mod), f)
 
-    print("Models trained and saved successfully!")
+    # Print paper metrics
+    r2_t = r2_score(mech_df['tensile_strength'], model_tensile.predict(X))
+    mae_t = mean_absolute_error(mech_df['tensile_strength'], model_tensile.predict(X))
+    print(f"Database & Models Saved! Tensile R2={r2_t:.4f}, MAE={mae_t:.2f} MPa")
 
-# Inverse Optimization Engine using SciPy
-def optimize_composition(target_tensile):
+def optimize_composition(target_tensile=None, maximize_strength=False):
     with open('model_tensile.pkl', 'rb') as f:
         model = pickle.load(f)
 
-    # Objective function: minimize difference between prediction and user target
     def objective(params):
-        alumina, jute, temp = params
-        pred = model.predict([[alumina, jute, temp]])[0]
+        pred = model.predict([[params[0]]])[0]
+        if maximize_strength:
+            return -pred
         return (pred - target_tensile) ** 2
 
-    # Feature bounds: Alumina (0-10%), Jute (20-40%), Curing Temp (80-120 C)
-    bounds = [(0, 1.0), (20, 40), (80, 120)]
-    initial_guess = [0.5, 30.0, 100.0]
-
-    res = minimize(objective, initial_guess, bounds=bounds, method='L-BFGS-B')
-    
-    return {
-        'alumina_wt': round(res.x[0], 2),
-        'jute_wt': round(res.x[1], 2),
-        'curing_temp': round(res.x[2], 2)
-    }
+    res = minimize(objective, [0.50], bounds=[(0.0, 1.0)], method='L-BFGS-B')
+    opt_alumina = round(float(res.x[0]), 3)
+    pred_ts = round(float(model.predict([[opt_alumina]])[0]), 2)
+    return {'alumina_wt': opt_alumina, 'predicted_tensile': pred_ts}
 
 if __name__ == "__main__":
-    generate_and_train()
+    build_database_and_train()
